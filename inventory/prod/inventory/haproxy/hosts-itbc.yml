@@ -500,16 +500,16 @@ all:
           - "option tcp-check"
 
         servers:
-          - name: fast-k01
-            address: 10.44.24.91
+          - name: worker1
+            address: 10.44.24.81
             port: 31601
             options: "check"
-          - name: fast-k02
-            address: 10.44.24.92
+          - name: worker2
+            address: 10.44.24.83
             port: 31601
             options: "check"
-          - name: fast-k03
-            address: 10.44.24.93
+          - name: worker3
+            address: 10.44.24.85
             port: 31601
             options: "check"
 
