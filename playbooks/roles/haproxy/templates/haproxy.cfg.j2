@@ -1,0 +1,107 @@
+global
+{% if haproxy_rsyslog_type == 'socket' %}
+  log {{ haproxy_socket_logs }} local2 debug
+{% endif %}
+{% if haproxy_rsyslog_type == 'udp' %}
+  log 127.0.0.1:514 local2 debug
+{% endif %}
+{% if haproxy_socket_stats != '' %}
+  stats socket {{ haproxy_socket_stats }} {{ haproxy_socket_stats_perms | default("level admin") }}
+  stats timeout 2m
+{% endif %}
+
+{% if haproxy_chroot != '' %}
+  chroot {{ haproxy_chroot }}
+{% endif %}
+  user {{ haproxy_user }}
+  group {{ haproxy_group }}
+{% if haproxy_run_as_daemon | default(true) %}
+  daemon
+{% endif %}
+{% for global_var in haproxy_global_vars %}
+  {{ global_var }}
+{% endfor %}
+
+defaults
+  log global
+  mode  http
+{% for _timeout_option in haproxy_default_timeout_options %}
+  timeout {{ _timeout_option }}
+{% endfor %}
+
+{% for _default_var in (haproxy_default_vars | default([]))  %}
+  {{ _default_var }}
+{% endfor %}
+
+{% if haproxy_stats_enable %}
+listen stats
+    bi-nd *:{{ haproxy_stats_port }}
+    mode http
+    stats enable
+    stats hide-version
+{% if haproxy_stats_refresh != '' %}
+    stats refresh {{ haproxy_stats_refresh }}
+{% endif %}
+{% if haproxy_stats_username != '' %}
+    stats auth {{ haproxy_stats_username }}:{{ haproxy_stats_password }}
+{% endif %}
+{% if haproxy_stats_realm != '' %}
+    stats realm {{ haproxy_stats_realm }}
+{% endif %}
+    stats uri {{ haproxy_stats_uri }}
+{% endif %}
+{% for _stats_option in (haproxy_stats_options | default([]))   %}
+    option {{ _stats_option }}
+{% endfor %}
+{% for _stats_var in (haproxy_stats_vars | default([]))  %}
+    {{ _stats_var }}
+{% endfor %}
+
+{% for _frontend in haproxy_frontends %}
+frontend {{ _frontend.name }}
+{% for _bind_port in _frontend.bind_ports %}
+    bind {{ _frontend.bind_address }}:{{ _bind_port.port }} {{ _bind_port.bind_options | default('') }}
+{% endfor %}
+{% if _frontend.mode is defined %}
+    mode {{ _frontend.mode }}
+{% endif %}
+{% for _frontend_var in (_frontend.vars | default([])) %}
+    {{ _frontend_var }}
+{% endfor %}
+{% if _frontend.acl | default(false) %}
+{% for acl in _frontend.acl %}
+    {{ acl }}
+{% endfor %}
+{% endif %}
+{% if _frontend.used_backend | default(false) %}
+{% for _use_backend in _frontend.use_backend %}
+    use_backend {{ _use_backend.backend_name }} {{ _use_backend.rule | default('') }}
+{% endfor %}
+{% endif %}
+{% if _frontend.backend_name | default(false) %}
+    default_backend {{ _frontend.backend_name }}
+{% endif %}
+
+{% endfor %}
+{% for _backend in haproxy_backends %}
+backend {{ _backend.name }}
+{% if _backend.mode | default(false) %}
+    mode {{ _backend.mode }}
+{% endif %}
+{% for _backend_var in (_backend.vars | default([])) %}
+    {{ _backend_var }}
+{% endfor %}
+{% if _backend.balance_method | default(false) %}
+    balance {{ _backend.balance_method }}
+{% endif %}
+{% for _option in (_backend.options | default([])) %}
+    option {{ _option }}
+{% endfor %}
+{% if _backend.cookie | default(false) %}
+    cookie {{ _backend.cookie }}
+{% endif %}
+{% for _backend_server in ( _backend.servers | default([]))  %}
+    server {{ _backend_server.name }} {{ _backend_server.address }}:{{ _backend_server.port | default('80') }} {{ _backend_server.params | default([]) | join(' ') }}
+{% endfor %}
+
+{% endfor %}

@@ -1,0 +1,170 @@
+---
+- name: Install haproxy
+  tags: install
+  block:
+    - name: Create keyrings directory
+      when: ansible_os_family == 'Debian'
+      ansible.builtin.file:
+        state: directory
+        path: /etc/apt/trusted.gpg.d
+        mode: "0755"
+
+    - name: Distr vars
+      when: ansible_os_family == 'Debian'
+      ansible.builtin.set_fact:
+        haproxy_distr: "{{ ansible_distribution | lower }}"
+        haproxy_distr_release: "{{ ansible_distribution_release | lower }}"
+
+    - name: Gpg key path to variable
+      when: ansible_os_family == 'Debian'
+      ansible.builtin.set_fact:
+        gpg_key_path: "/etc/apt/trusted.gpg.d/haproxy_{{ haproxy_distr }}.gpg"
+
+    - name: Add HAProxy signing key
+      when: ansible_os_family == 'Debian'
+      ansible.builtin.get_url:
+        url: "{{ haproxy_gpg_repo_url }}/haproxy_{{ haproxy_distr }}.gpg"
+        dest: "{{ gpg_key_path }}"
+        mode: '0644'
+        force: true
+
+    - name: Add HAProxy repository | Debian
+      when: haproxy_distr == 'debian'
+      ansible.builtin.apt_repository:
+        repo: "deb {{ haproxy_nexus_repo_url }}{{ haproxy_distr }}/ {{ haproxy_distr_release }}-backports-{{ haproxy_package_version[:3] }} main"
+        state: present
+
+    - name: Add HAProxy repository | Ubuntu
+      when: haproxy_distr == 'ubuntu'
+      ansible.builtin.apt_repository:
+        repo: "{{ item }}"
+        state: present
+      loop:
+        - "deb {{ haproxy_nexus_repo_url }}{{ haproxy_distr }}/{{ haproxy_package_name }}-{{ haproxy_package_version[:3] }}/{{ haproxy_distr }} {{ haproxy_distr_release }} main"
+        - "deb-src {{ haproxy_nexus_repo_url }}{{ haproxy_distr }}/{{ haproxy_package_name }}-{{ haproxy_package_version[:3] }}/{{ haproxy_distr }} {{ haproxy_distr_release }} main"
+
+    - name: Ensure HAProxy is installed | deb-based system
+      when: ansible_os_family == 'Debian'
+      ansible.builtin.apt:
+        name: "{{ haproxy_package_name }}={{ haproxy_package_version }}*"
+        update_cache: true
+        cache_valid_time: 3600
+        state: present
+
+    - name: Ensure HAProxy is installed | rh-based system
+      when: ansible_os_family == 'RedHat'
+      ansible.builtin.package:
+        name: "{{ haproxy_package_name }}-{{ haproxy_package_version }}"
+        state: present
+
+    - name: Ensure HAProxy is enabled (so init script will start it on Debian).
+      when: ansible_os_family == 'Debian'
+      ansible.builtin.lineinfile:
+        dest: /etc/default/haproxy
+        regexp: "^ENABLED.+$"
+        line: "ENABLED=1"
+        state: present
+
+- name: SSL part of playbook
+  tags: certificate
+  when: >
+    (enable_ssl is defined) and
+    (enable_ssl is true)
+  ansible.builtin.include_tasks:
+    file: certificate.yml
+    apply:
+      tags:
+        - certificate
+
+- name: Configure errorfiles, rsyslog, logrotate, sysctl, systemd
+  tags: configure_misc
+  block:
+    - name: Setting up errorfiles
+      ansible.builtin.include_tasks: errorfile.yml
+
+    - name: Setting up rsyslog
+      tags: rsyslog
+      ansible.builtin.include_tasks: rsyslog.yml
+
+    - name: Setting up logrotate
+      tags: logrotate
+      ansible.builtin.include_tasks: logrotate.yml
+
+    - name: Setting up sysctl
+      tags: sysctl
+      ansible.builtin.include_tasks: sysctl.yml
+
+    - name: Setting up systemd
+      tags: systemd
+      ansible.builtin.include_tasks: systemd.yml
+
+- name: Get HAProxy version
+  register: haproxy_version_result
+  changed_when: false
+  check_mode: false
+  ansible.builtin.command: haproxy -v
+
+- name: Create directory for haproxy stats
+  ansible.builtin.file:
+    path: "{{ haproxy_chroot }}"
+    state: directory
+    mode: '0755'
+
+- name: Configure HAProxy
+  tags: haproxy_config
+  block:
+    - name: Copy HAProxy configuration in place
+      notify: "Restart haproxy"
+      register: haproxy_updated_config
+      ansible.builtin.template:
+        src: haproxy.cfg.j2
+        dest: "{{ haproxy_conf_path }}/haproxy.cfg"
+        mode: "0644"
+        backup: true
+
+    - name: Checking new config (quiet)
+      ansible.builtin.shell:
+        cmd: "{{ haproxy_binary_path }}/haproxy -f {{ haproxy_conf_path }}/haproxy.cfg -c -q"
+
+    - name: Checking new config (verbose)
+      ansible.builtin.shell:
+        cmd: "{{ haproxy_binary_path }}/haproxy -f {{ haproxy_conf_path }}/haproxy.cfg -c"
+
+  rescue:
+    - name: Restoring backuped config for haproxy
+      register: haproxy_backup_restored
+      ansible.builtin.copy:
+        owner: root
+        group: root
+        mode: "0644"
+        remote_src: true
+        dest: "{{ haproxy_conf_path }}/haproxy.cfg"
+        src: "{{ haproxy_updated_config['backup_file'] }}"
+
+  always:
+    - name: Removing backup file
+      ansible.builtin.file:
+        path: "{{ haproxy_updated_config['backup_file'] }}"
+        state: absent
+      when: haproxy_updated_config is defined and haproxy_updated_config.backup_file is defined
+
+- name: Setting up keepalived
+  tags: keepalived
+  when: >
+    (keepalived_install is defined) and
+    (keepalived_install is true)
+  ansible.builtin.include_tasks:
+    file: keepalived.yml
+    apply:
+      tags:
+        - keepalived
+
+- name: Force all notified handlers to run at this point, not waiting for normal sync points
+  ansible.builtin.meta: flush_handlers
+
+- name: Ensure HAProxy is started and enabled on boot
+  become: true
+  ansible.builtin.service:
+    name: "{{ haproxy_service_name }}"
+    state: started
+    enabled: true

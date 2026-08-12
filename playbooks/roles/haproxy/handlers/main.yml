@@ -1,0 +1,25 @@
+---
+- name: Restart haproxy
+  become: true
+  become_user: root
+  become_method: ansible.builtin.sudo
+  when: haproxy_backup_restored is not defined
+  ansible.builtin.service:
+    name: "{{ haproxy_service_name }}"
+    state: restarted
+
+- name: Restart rsyslog
+  become: true
+  become_user: root
+  become_method: ansible.builtin.sudo
+  ansible.builtin.service:
+    name: "rsyslog"
+    state: restarted
+
+- name: Restart keepalived
+  become: true
+  become_user: root
+  become_method: ansible.builtin.sudo
+  ansible.builtin.service:
+    name: "keepalived"
+    state: restarted

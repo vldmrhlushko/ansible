@@ -1,0 +1,112 @@
+all:
+  hosts:
+    LB1:
+      ansible_host: 10.10.13.97
+    LB2:
+      ansible_host: 10.10.13.98
+    LB3:
+      ansible_host: 10.10.13.99
+
+  children:
+    app:
+      hosts:
+        LB1:
+        LB2:
+        LB3:
+
+  vars:
+    # enable_ssl: true
+    # keepalived_install: true
+    # keepalived_virtual_ip: 10.10.13.100
+    ansible_private_key_file: ~/.ssh/ansible_itbc.corp
+
+    ################################################################
+    # Frontends configuration
+    ################################################################
+
+    haproxy_frontends:
+      - name: "kubernetes-api"
+        mode: tcp
+        bind_address: "*"
+        bind_ports:
+          - port: 6443
+            bind_options: "name k8s_kube_workload_api"
+        vars:
+          - "option tcplog"        
+        backend_name: "kube-master-nodes"
+
+      
+      - name: "mongodb"
+        mode: tcp
+        bind_address: "*"
+        bind_ports:
+          - port: 30017
+            bind_options: "name mongodb_api"
+        vars:
+          - "option tcplog"        
+        backend_name: "mongodb_back"
+
+      - name: "stats"
+        mode: "http"
+        bind_address: "*"
+        bind_ports:
+          - port: "8888"
+        vars:
+          - "stats enable"
+          - "stats uri /stats"
+          - "stats refresh 15s"
+          - "stats auth admin:P@rkan2000"
+
+
+    ################################################################
+    # Backends configuration
+    ################################################################
+
+    haproxy_backends:
+      - name: "kube-master-nodes"
+        mode: tcp
+        balance: "roundrobin"
+        servers:
+          - name: "master1"
+            address: 10.10.13.100
+            port: 6443
+            params:
+              - "check inter 2s fall 3"
+          - name: "master2"
+            address: 10.10.13.101
+            port: 6443
+            params:
+              - "check inter 2s fall 3"
+          - name: "master3"
+            address: 10.10.13.102
+            port: 6443
+            params:
+              - "check inter 2s fall 3"
+        vars:
+          - timeout server 3h
+
+      - name: "mongodb_back"
+        mode: tcp
+        balance: "roundrobin"
+        servers:
+          - name: "mongo0"
+            address: 10.44.24.53
+            port: 30017
+            params:
+              - "check inter 2s fall 3"
+          - name: "mongo1"
+            address: 10.44.24.54
+            port: 30017
+            params:
+              - "check inter 2s fall 3"
+          - name: "mongo2"
+            address: 10.44.24.56
+            port: 30017
+            params:
+              - "check inter 2s fall 3"
+
+
+
+
+
+

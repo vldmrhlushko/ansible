@@ -1,0 +1,9 @@
+---
+- name: Configure haproxy
+  hosts: all
+  remote_user: ansible
+  become: true
+  become_user: root
+  become_method: sudo
+  roles:
+    - haproxy

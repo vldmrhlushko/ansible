@@ -1,0 +1,110 @@
+---
+# Packages variables for Debian/Ubuntu distr
+# haproxy_nexus_repo_url variable will be concanteneted with distubutive name
+haproxy_nexus_repo_url: "https://nexus.home.local/repository/apt_haproxy_"
+haproxy_gpg_repo_url: "https://nexus.home.local/repository/raw_apt_gpg_keys"
+
+# Package/Service settings
+haproxy_package_name: "haproxy"
+# haproxy_package_name: "rh-haproxy18"
+
+haproxy_package_version: "2.4"
+# haproxy_package_version: "openssl"
+
+haproxy_service_name: "haproxy"
+# haproxy_service_name: "rh-haproxy18-haproxy"
+
+haproxy_conf_path: "/etc/haproxy"
+# haproxy_conf_path: "/etc/opt/rh/rh-haproxy18/haproxy/"
+haproxy_binary_path: "/usr/sbin"
+# haproxy_binary_path: "/opt/rh/rh-haproxy18/root/usr/sbin/"
+
+haproxy_cert_path: "{{ haproxy_conf_path }}/ssl"
+haproxy_systemd_path: "/etc/systemd/system/haproxy.service.d/"
+haproxy_errorfile_path: "{{ haproxy_conf_path }}/errors"
+
+# haproxy_sysctl: []
+haproxy_sysctl:
+  - key: "net.ipv4.ip_nonlocal_bind"
+    value: "1"
+
+# Rsyslog settings
+haproxy_log_path: "/var/log/haproxy"
+haproxy_log_facility: "local2"
+
+# haproxy_rsyslog_type: "socket"
+haproxy_rsyslog_type: "udp"
+haproxy_socket_logs: "/var/lib/haproxy/logs"
+haproxy_rsyslog_conf: "/etc/rsyslog.d/{{ haproxy_service_name }}.conf"
+
+# Global settings
+haproxy_socket_stats: /var/lib/haproxy/stats
+haproxy_chroot: /var/lib/haproxy
+
+# haproxy_chroot: /var/opt/rh/rh-haproxy18/lib/haproxy
+haproxy_user: haproxy
+haproxy_group: haproxy
+haproxy_run_as_daemon: true
+
+# Statistics page
+haproxy_stats_enable: false
+haproxy_stats_port: 5000
+haproxy_stats_refresh: 30s
+haproxy_stats_username: 'admin'
+haproxy_stats_password: ''
+haproxy_stats_uri: "/haproxy?stats"
+
+# Extra global vars (see README for example usage).
+#haproxy_global_vars: []
+haproxy_global_vars:
+  - "maxconn 4096"
+
+haproxy_default_timeout_options:
+  - 'connect 300s'
+  - 'client 300s'
+  - 'server 300s'
+
+haproxy_stats_realm: 'Strictly\ Private'
+
+# Default options.
+haproxy_default_options:
+  - 'httplog'
+  - 'dontlognull'
+  - 'forwardfor except 127.0.0.1'
+
+# Frontend settings.
+haproxy_default_frontend_bind_address: '*'
+haproxy_default_frontend_port: 80
+haproxy_default_frontend_mode: 'http'
+
+# List of backend servers.
+haproxy_backend_servers: []
+#    - name: "serverN"
+#      address: "127.0.0.1"
+#      port: "8080"
+#      params:
+#      - check
+
+# Multiple frontends.
+haproxy_frontends:
+  - name: "frontendN"
+    bind_address: "{{ haproxy_default_frontend_bind_address }}"
+    backend_name: "backendN"
+    bind_ports:
+      - port: "{{ haproxy_default_frontend_port }}"
+    vars:
+      - "log global"
+
+# Multiple backends.
+haproxy_backends:
+  - name: "backendN"
+    options:
+      - http-server-close
+      - forwardfor
+    servers: '{{ haproxy_backend_servers }}'
+    vars: []
+
+# keepalived section
+keepalived_conf_path: "/etc/keepalived"
+keepalived_conf_name: "keepalived.conf"
+vrrp_password: "osdfiYUR!y3eao"

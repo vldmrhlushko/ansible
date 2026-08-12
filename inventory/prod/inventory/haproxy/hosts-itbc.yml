@@ -1,0 +1,563 @@
+all:
+  hosts:
+    LB1:
+      ansible_host: 10.44.24.71
+    LB2:
+      ansible_host: 10.44.24.72
+    LB3:
+      ansible_host: 10.44.24.73
+
+  children:
+    app:
+      hosts:
+        LB1:
+        LB2:
+        LB3:
+
+  vars:
+    # enable_ssl: true
+    # keepalived_install: true
+    # keepalived_virtual_ip: 10.10.13.100
+    ansible_private_key_file: ~/.ssh/ansible_itbc.corp
+
+    ################################################################
+    # Frontends configuration
+    ################################################################
+
+    haproxy_frontends:
+      - name: "kubernetes-api"
+        mode: tcp
+        bind_address: "*"
+        bind_ports:
+          - port: 6443
+            bind_options: "name k8s_kube_workload_api"
+        vars:
+          - "option tcplog"        
+        backend_name: "kube-master-nodes"
+
+      - name: "stats"
+        mode: "http"
+        bind_address: "*"
+        bind_ports:
+          - port: "8888"
+        vars:
+          - "stats enable"
+          - "stats uri /stats"
+          - "stats refresh 15s"
+          - "stats auth admin:P@rkan2000"
+
+      
+      - name: "mongodb"
+        mode: tcp
+        bind_address: "*"
+        bind_ports:
+          - port: 30017
+            bind_options: "name mongodb_api"
+        vars:
+          - "option tcplog"        
+        backend_name: "mongodb"
+
+      
+
+      - name: "argocd"
+        mode: tcp
+        bind_address: "*"
+        bind_ports:
+          - port: 4433
+            bind_options: "name argocd_web"
+        vars:
+          - "option tcplog"        
+        backend_name: "argocd"  
+
+      - name: "http_in"
+        mode: http
+        bind_address: "*"
+        bind_ports:
+          - port: 8090
+        vars:
+          - "option httplog"
+        used_backend: true
+        use_backend:
+          - backend_name: "entity_service"
+            rule: "if { path_beg /api/entity }"
+          - backend_name: "user_service"
+            rule: "if { path_beg /api/user }"
+          - backend_name: "ws_service"
+            rule: "if { path_beg /api/ws }"
+          - backend_name: "logger_service"
+            rule: "if { path_beg /api/logger }"
+          - backend_name: "file_service"
+            rule: "if { path_beg /api/file }"
+          - backend_name: "nginx_nodes"
+            rule: ""
+
+        default_backend: "nginx_nodes"
+
+
+      - name: "rabbitmq"
+        mode: tcp
+        bind_address: "*"
+        bind_ports:
+          - port: 5672
+            bind_options: "name rabbitmq_api"
+        vars:
+          - "option tcplog"        
+        backend_name: "rabbitmq" 
+
+      - name: "rabbitmq_mgmt"
+        mode: tcp
+        bind_address: "*"
+        bind_ports:
+          - port: 15672
+            bind_options: "name rabbitmq_mgmt"
+        vars:
+          - "option tcplog"        
+        backend_name: "rabbitmq_mgmt" 
+
+      - name: "kibana"
+        mode: tcp
+        bind_address: "*"
+        bind_ports:
+          - port: 5601
+            bind_options: "name kibana_api"
+        vars:
+          - "option tcplog"        
+        backend_name: "kibana"
+
+      - name: "logstash"
+        mode: tcp
+        bind_address: "*"
+        bind_ports:
+          - port: 5000
+            bind_options: "name logstash_api"
+        vars:
+          - "option tcplog"        
+        backend_name: "logstash"
+
+      - name: "elasticsearch"
+        mode: tcp
+        bind_address: "*"
+        bind_ports:
+          - port: 9200
+            bind_options: "name elasticsearch_api"
+        vars:
+          - "option tcplog"        
+        backend_name: "elasticsearch"
+      
+
+
+    ################################################################
+    # Backends configuration
+    ################################################################
+
+    haproxy_backends:
+      - name: "kube-master-nodes"
+        mode: tcp
+        balance: "roundrobin"
+        servers:
+          - name: "master1"
+            address: 10.44.24.74
+            port: 6443
+            params:
+              - "check inter 2s fall 3"
+          - name: "master2"
+            address: 10.44.24.75
+            port: 6443
+            params:
+              - "check inter 2s fall 3"
+          - name: "master3"
+            address: 10.44.24.76
+            port: 6443
+            params:
+              - "check inter 2s fall 3"
+        vars:
+          - timeout server 3h
+
+      - name: "mongodb"
+        mode: tcp
+        balance: "roundrobin"
+        servers:
+          - name: "mongo0"
+            address: 10.44.24.53
+            port: 30017
+            params:
+              - "check inter 2s fall 3"
+          - name: "mongo1"
+            address: 10.44.24.54
+            port: 30017
+            params:
+              - "check inter 2s fall 3"
+          - name: "mongo2"
+            address: 10.44.24.56
+            port: 30017
+            params:
+              - "check inter 2s fall 3"
+
+      - name: "argocd"
+        mode: tcp
+        balance: roundrobin
+
+        vars:
+          - "option tcp-check"
+          - "default-server inter 10s downinter 5s rise 2 fall 2 slowstart 60s maxconn 250 maxqueue 256 weight 100"
+
+        servers:
+          - name: fast-k01
+            address: 10.44.24.53
+            port: 31080
+            params:
+              - "check weight 1 maxconn 1024"
+
+          - name: fast-k02
+            address: 10.44.24.54
+            port: 31080
+            params:
+              - "check weight 1 maxconn 1024"
+
+          - name: fast-k03
+            address: 10.44.24.56
+            port: 31080
+            params:
+              - "check weight 1 maxconn 1024"
+
+          - name: hellout
+            address: 10.44.30.128
+            port: 31080
+            params:
+              - "check weight 1 maxconn 1024"
+
+      - name: "entity_service"
+        mode: http
+
+        vars:
+          - "http-response add-header X-Routed-By entity_service"
+          - "http-request set-path %[path,regsub(^/api/entity/?$,/)]"
+          - "http-request set-path %[path,regsub(^/api/entity,)]"
+          - "option httplog"
+          - "timeout connect 5s"
+          - "timeout server 30s"
+          - "timeout client 30s"
+          - option httpchk GET /
+          - "http-check expect rstatus (200|403)"
+
+        servers:
+          - name: fast-k01
+            address: 10.44.24.53
+            port: 31022
+            params: 
+              - "check"             
+          - name: fast-k02
+            address: 10.44.24.54
+            port: 31022
+            params:
+              - "check"
+          - name: fast-k03
+            address: 10.44.24.56
+            port: 31022
+            params:
+              - "check"
+          - name: hellout
+            address: 10.44.30.128
+            port: 31022
+            params:
+              - "check"
+
+      
+      - name: "logger_service"
+        mode: http
+
+        vars:
+          - "http-response add-header X-Routed-By logger_service"
+          - "http-request set-path %[path,regsub(^/api/logger/?$,/)]"
+          - "http-request set-path %[path,regsub(^/api/logger,)]"
+          - "option httplog"
+          - "timeout connect 5s"
+          - "timeout server 30s"
+          - "timeout client 30s"
+          - option httpchk GET /
+          - "http-check expect rstatus (200|403)"
+
+        servers:
+          - name: fast-k01
+            address: 10.44.24.53
+            port: 30023
+            params: 
+              - "check"
+          - name: fast-k02
+            address: 10.44.24.54
+            port: 30023
+            params:
+              - "check"
+          - name: fast-k03
+            address: 10.44.24.56
+            port: 30023
+            params:
+              - "check"
+          - name: hellout
+            address: 10.44.30.128
+            port: 30023
+            params:
+              - "check"
+
+      - name: "file_service"
+        mode: http
+
+        vars:
+          - "http-response add-header X-Routed-By file_service"
+          - "http-request set-path %[path,regsub(^/api/file/?$,/)]"
+          - "http-request set-path %[path,regsub(^/api/file,)]"
+          - "option httplog"
+          - "timeout connect 5s"
+          - "timeout server 30s"
+          - "timeout client 30s"
+          - option httpchk GET /
+          - "http-check expect rstatus (200|403)"
+
+        servers:
+          - name: fast-k01
+            address: 10.44.24.53
+            port: 30024
+            params: 
+              - "check"
+          - name: fast-k02
+            address: 10.44.24.54
+            port: 30024
+            params:
+              - "check"
+          - name: fast-k03
+            address: 10.44.24.56
+            port: 30024
+            params:
+              - "check"
+          - name: hellout
+            address: 10.44.30.128
+            port: 30024
+            params:
+              - "check"
+
+      - name: "user_service"
+        mode: http
+
+        vars:
+          - "http-request set-path %[path,regsub(^/api/user/?$,/)]"
+          - "http-request set-path %[path,regsub(^/api/user,)]"
+          - "option httplog"
+          - "timeout connect 5s"
+          - "timeout server 30s"
+          - "timeout client 30s"
+          - option httpchk GET /
+          - "http-check expect rstatus (200|403)"
+
+        servers:
+          - name: fast-k01
+            address: 10.44.24.53
+            port: 31115
+            params: 
+              - "check"
+          - name: fast-k02
+            address: 10.44.24.54
+            port: 31115
+            params:
+              - "check"
+          - name: fast-k03
+            address: 10.44.24.56
+            port: 31115
+            params:
+              - "check"
+          - name: hellout
+            address: 10.44.30.128
+            port: 31115
+            params:
+              - "check"
+
+
+      - name: "ws_service"
+        mode: http
+
+        vars:
+          - "http-request set-path %[path,regsub(^/api/ws/?$,/)]"
+          - "http-request set-path %[path,regsub(^/api/ws,)]"
+          - "option httplog"
+          - "timeout connect 5s"
+          - "timeout server 30s"
+          - "timeout client 30s"
+          - option httpchk GET /
+          - "http-check expect rstatus (200|403)"
+
+        servers:
+          - name: fast-k01
+            address: 10.44.24.53
+            port: 31880
+            params: 
+              - "check"
+          - name: fast-k02
+            address: 10.44.24.54
+            port: 31880
+            params: 
+              - "check"
+          - name: fast-k03
+            address: 10.44.24.56
+            port: 31880
+            params: 
+              - "check"
+          - name: hellout
+            address: 10.44.30.128
+            port: 31880
+            params: 
+              - "check"
+
+      - name: "nginx_nodes"
+        mode: http
+
+        vars:
+          - "option httplog"
+          - "timeout connect 5s"
+          - "timeout server 30s"
+          - "timeout client 30s"
+          - "option httpchk GET /"
+          - "http-check expect rstatus (200|403)"
+
+        servers:
+          - name: fast-k01
+            address: 10.44.24.53
+            port: 31180
+            params: 
+              - "check"
+          - name: fast-k02
+            address: 10.44.24.54
+            port: 31180
+            params: 
+              - "check"
+          - name: fast-k03
+            address: 10.44.24.56
+            port: 31180
+            params: 
+              - "check"
+          - name: hellout
+            address: 10.44.30.128
+            port: 31180
+            params: 
+              - "check"
+
+
+      - name: "rabbitmq"
+        mode: tcp
+        balance: "roundrobin"
+        vars:
+          - "option tcp-check"
+
+        servers:
+          - name: fast-k01
+            address: 10.44.24.53
+            port: 30672
+            params: 
+              - "check"
+          - name: fast-k02
+            address: 10.44.24.54
+            port: 30672
+            params:
+              - "check"
+          - name: fast-k03
+            address: 10.44.24.56
+            port: 30672
+            params:
+              - "check"
+          - name: hellout
+            address: 10.44.30.128
+            port: 30672
+            params: 
+              - "check"
+
+
+      - name: "rabbitmq_mgmt"
+        mode: tcp
+        balance: "roundrobin"
+        vars:
+          - "option tcp-check"
+
+        servers:
+          - name: fast-k01
+            address: 10.44.24.53
+            port: 31672
+            options: "check"
+          - name: fast-k02
+            address: 10.44.24.54
+            port: 31672
+            options: "check"
+          - name: fast-k03
+            address: 10.44.24.56
+            port: 31672
+            options: "check"
+          - name: hellout
+            address: 10.44.30.128
+            port: 31672
+            options: "check"
+
+      - name: "kibana"
+        mode: tcp
+        balance: "roundrobin"
+        vars:
+          - "option tcp-check"
+
+        servers:
+          - name: fast-k01
+            address: 10.44.24.91
+            port: 31601
+            options: "check"
+          - name: fast-k02
+            address: 10.44.24.92
+            port: 31601
+            options: "check"
+          - name: fast-k03
+            address: 10.44.24.93
+            port: 31601
+            options: "check"
+
+      - name: "logstash"
+        mode: tcp
+        balance: "roundrobin"
+        vars:
+          - "option tcp-check"
+
+        servers:
+          - name: fast-k01
+            address: 10.44.24.53
+            port: 31500
+            options: "check"
+          - name: fast-k02
+            address: 10.44.24.54
+            port: 31500
+            options: "check"
+          - name: fast-k03
+            address: 10.44.24.56
+            port: 31500
+            options: "check"
+          - name: hellout
+            address: 10.44.30.128
+            port: 31500
+            options: "check"
+
+      - name: "elasticsearch"
+        mode: tcp
+        balance: "roundrobin"
+        vars:
+          - "option tcp-check"
+
+        servers:
+          - name: fast-k01
+            address: 10.44.24.53
+            port: 31920
+            options: "check"
+          - name: fast-k02
+            address: 10.44.24.54
+            port: 31920
+            options: "check"
+          - name: fast-k03
+            address: 10.44.24.56
+            port: 31920
+            options: "check"
+          - name: hellout
+            address: 10.44.30.128
+            port: 31920
+            options: "check"
+
